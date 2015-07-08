@@ -13,153 +13,75 @@ OAUTH_TOKEN_SECRET = ENV['EBOOKS_OAUTH_TOKEN_SECRET']
 
 ROBOT_ID = "ebooks" # Prefer not to talk to other robots
 TWITTER_USERNAME = "amandabockler" # Ebooks account username
-TEXT_MODEL_NAME = "amandabockler" # This should be the name of the text model
+TEXT_MODEL_NAME = "adambockler" # This should be the name of the text model
 
 DELAY = 2..30 # Simulated human reply delay range, in seconds
 BLACKLIST = ['tinysubversions', 'dril'] # users to avoid interaction with
-SPECIAL_WORDS = ['singularity', 'world domination'] # Words we like
-BANNED_WORDS = ['voldemort', 'evgeny morozov', 'heroku'] # Words we don't want to use
+SPECIAL_WORDS = ['pie', 'papoose', 'jabroni'] # Words we like
+BANNED_WORDS = ['forward', 'envelope', 'regard'] # Words we don't want to use
 
-# Track who we've randomly interacted with globally
-$have_talked = {}
-$banned_words = BANNED_WORDS
+# Information about a particular Twitter user we know
+class UserInfo
+  attr_reader :username
 
-# Overwrite the Model#valid_tweet? method to check for banned words
-class Ebooks::Model
-  def valid_tweet?(tokens, limit)
-    tweet = NLP.reconstruct(tokens)
-    found_banned = $banned_words.any? do |word|
-      re = Regexp.new("\\b#{word}\\b", "i")
-      re.match tweet
-    end
-    tweet.length <= limit && !NLP.unmatched_enclosers?(tweet) && !found_banned
+  # @return [Integer] how many times we can pester this user unprompted
+  attr_accessor :pesters_left
+
+  # @param username [String]
+  def initialize(username)
+    @username = username
+    @pesters_left = 1
   end
 end
 
-class GenBot
-  def initialize(bot, modelname)
-    @bot = bot
-    @model = nil
+class MyBot < Ebooks::Bot
+  # Configuration here applies to all MyBots
+  def configure
+    # Consumer details come from registering an app at https://dev.twitter.com/
+    # Once you have consumer details, use "ebooks auth" for new access tokens
+    self.consumer_key = CONSUMER_KEY # Your app consumer key
+    self.consumer_secret = CONSUMER_SECRET # Your app consumer secret
 
-    bot.consumer_key = CONSUMER_KEY
-    bot.consumer_secret = CONSUMER_SECRET
+    # Users to block instead of interacting with
+    self.blacklist = ['tnietzschequote']
 
-    bot.on_startup do
-      @model = Model.load("model/#{modelname}.model")
-      @top100 = @model.keywords.top(100).map(&:to_s).map(&:downcase)
-      @top50 = @model.keywords.top(20).map(&:to_s).map(&:downcase)
-    end
+    # Range in seconds to randomize delay when bot.delay is called
+    self.delay_range = 1..6
+  end
 
-    bot.on_message do |dm|
-      bot.delay DELAY do
-        bot.reply dm, @model.make_response(dm[:text])
-      end
-    end
-
-    bot.on_follow do |user|
-      bot.delay DELAY do
-        bot.follow user[:screen_name]
-      end
-    end
-
-    bot.on_mention do |tweet, meta|
-      # Avoid infinite reply chains
-      next if tweet[:user][:screen_name].include?(ROBOT_ID) && rand > 0.05
-
-      author = tweet[:user][:screen_name]
-      next if $have_talked.fetch(author, 0) >= 5
-      $have_talked[author] = $have_talked.fetch(author, 0) + 1
-
-      tokens = NLP.tokenize(tweet[:text])
-      very_interesting = tokens.find_all { |t| @top50.include?(t.downcase) }.length > 2
-      special = tokens.find { |t| SPECIAL_WORDS.include?(t) }
-
-      if very_interesting || special
-        favorite(tweet)
-      end
-
-      reply(tweet, meta)
-    end
-
-    bot.on_timeline do |tweet, meta|
-      next if tweet[:retweeted_status] || tweet[:text].start_with?('RT')
-      author = tweet[:user][:screen_name]
-      next if BLACKLIST.include?(author)
-
-      tokens = NLP.tokenize(tweet[:text])
-
-      # We calculate unprompted interaction probability by how well a
-      # tweet matches our keywords
-      interesting = tokens.find { |t| @top100.include?(t.downcase) }
-      very_interesting = tokens.find_all { |t| @top50.include?(t.downcase) }.length > 2
-      special = tokens.find { |t| SPECIAL_WORDS.include?(t) }
-
-      if special
-        favorite(tweet)
-        favd = true # Mark this tweet as favorited
-
-        bot.delay DELAY do
-          bot.follow author
-        end
-      end
-
-      # Any given user will receive at most one random interaction per 12h
-      # (barring special cases)
-      next if $have_talked[author]
-      $have_talked[author] = $have_talked.fetch(author, 0) + 1
-
-      if very_interesting || special
-        favorite(tweet) if (rand < 0.5 && !favd) # Don't fav the tweet if we did earlier
-        retweet(tweet) if rand < 0.1
-        reply(tweet, meta) if rand < 0.1
-      elsif interesting
-        favorite(tweet) if rand < 0.1
-        reply(tweet, meta) if rand < 0.05
-      end
-    end
-
-    # Reset list of mention recipients every 12 hrs:
-    bot.scheduler.every '12h' do
-      $have_talked = {}
-    end
-
-    # 80% chance to tweet every 2 hours
-    bot.scheduler.every '2h' do
-      if rand <= 0.8
-        bot.tweet @model.make_statement
-      end
+  def on_startup
+    scheduler.every '24h' do
+      # Tweet something every 24 hours
+      # See https://github.com/jmettraux/rufus-scheduler
+      # tweet("hi")
+      # pictweet("hi", "cuteselfie.jpg")
+      tweet("hello there")
     end
   end
 
-  def reply(tweet, meta)
-    resp = @model.make_response(meta[:mentionless], meta[:limit])
-    @bot.delay DELAY do
-      @bot.reply tweet, meta[:reply_prefix] + resp
-    end
+  def on_message(dm)
+    # Reply to a DM
+    # reply(dm, "secret secrets")
   end
 
-  def favorite(tweet)
-    @bot.log "Favoriting @#{tweet[:user][:screen_name]}: #{tweet[:text]}"
-    @bot.delay DELAY do
-      @bot.twitter.favorite(tweet[:id])
-    end
+  def on_follow(user)
+    # Follow a user back
+    # follow(user.screen_name)
   end
 
-  def retweet(tweet)
-    @bot.log "Retweeting @#{tweet[:user][:screen_name]}: #{tweet[:text]}"
-    @bot.delay DELAY do
-      @bot.twitter.retweet(tweet[:id])
-    end
+  def on_mention(tweet)
+    # Reply to a mention
+    # reply(tweet, meta(tweet).reply_prefix + "oh hullo")
+  end
+
+  def on_timeline(tweet)
+    # Reply to a tweet in the bot's timeline
+    # reply(tweet, meta(tweet).reply_prefix + "nice tweet")
   end
 end
 
-def make_bot(bot, modelname)
-  GenBot.new(bot, modelname)
-end
-
-Ebooks::Bot.new(TWITTER_USERNAME) do |bot|
-  bot.oauth_token = OAUTH_TOKEN
-  bot.oauth_token_secret = OAUTH_TOKEN_SECRET
-
-  make_bot(bot, TEXT_MODEL_NAME)
+# Make a MyBot and attach it to an account
+MyBot.new(TWITTER_USERNAME) do |bot|
+  bot.access_token = OAUTH_TOKEN # Token connecting the app to this account
+  bot.access_token_secret = OAUTH_TOKEN_SECRET # Secret connecting the app to this account
 end
