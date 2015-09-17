@@ -16,7 +16,7 @@ TWITTER_USERNAME = "amandabockler" # Ebooks account username
 TEXT_MODEL_NAME = "adambockler" # This should be the name of the text model
 
 DELAY = 2..30 # Simulated human reply delay range, in seconds
-BLACKLIST = ['tinysubversions', 'dril'] # users to avoid interaction with
+BLACKLIST = [''] # users to avoid interaction with
 SPECIAL_WORDS = ['pie', 'papoose', 'jabroni'] # Words we like
 BANNED_WORDS = ['forward', 'envelope', 'regard'] # Words we don't want to use
 
@@ -43,7 +43,7 @@ class MyBot < Ebooks::Bot
     self.consumer_secret = CONSUMER_SECRET # Your app consumer secret
 
     # Users to block instead of interacting with
-    self.blacklist = ['tnietzschequote']
+    self.blacklist = BLACKLIST
 
     # Range in seconds to randomize delay when bot.delay is called
     self.delay_range = 1..6
